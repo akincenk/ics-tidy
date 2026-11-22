@@ -1,0 +1,7 @@
+/target/
+*.profraw
+.env
+.env.*
+.DS_Store
+.idea/
+.vscode/

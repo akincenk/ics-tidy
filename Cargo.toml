@@ -1,0 +1,18 @@
+[package]
+name = "ics-tidy"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+description = "Merge iCalendar files, remove duplicate events, expand recurring events into an agenda or CSV"
+license = "MIT"
+repository = "https://github.com/akincenk/ics-tidy"
+readme = "README.md"
+keywords = ["icalendar", "ics", "rfc5545", "calendar", "rrule"]
+categories = ["command-line-utilities", "date-and-time", "parser-implementations"]
+
+[dependencies]
+chrono = "0.4"
+chrono-tz = "0.10"
+clap = { version = "4", features = ["derive"] }
+iana-time-zone = "0.1"
+rrule = "0.14"
