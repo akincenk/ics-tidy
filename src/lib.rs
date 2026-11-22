@@ -19,7 +19,9 @@
 
 pub mod agenda;
 pub mod event;
+pub mod merge;
 pub mod parse;
+pub mod render;
 pub mod write;
 
 use parse::{Component, Warning};
