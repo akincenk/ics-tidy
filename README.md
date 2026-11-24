@@ -31,7 +31,7 @@ People who have the same week spread over several calendars (work, home, a share
 
 ## What it does
 
-- **Recurrence**: `RRULE`, `RDATE` and `EXDATE`, expanded with the [rrule](https://crates.io/crates/rrule) crate. Instances changed in place (`RECURRENCE-ID`) replace the original instance; cancelled instances (`STATUS:CANCELLED`) are left out.
+- **Recurrence**: `RRULE`, `RDATE` and `EXDATE`, expanded with the [rrule](https://crates.io/crates/rrule) crate. Instances changed in place (`RECURRENCE-ID`) replace the original instance; cancelled instances (`STATUS:CANCELLED`) are left out. A `DTSTART` that the rule would not produce (a Friday start on a Tuesday/Thursday rule) is still shown as the first instance and counts toward `COUNT`, as RFC 5545 3.8.5.3 says, with a warning: the RFC calls such a set undefined, so other programs may show it differently.
 - **Time zones**: `TZID` values are IANA names (`America/Vancouver`, also `/Europe/Berlin`). Times are converted to the `--tz` zone, which defaults to this computer's zone. Floating times (no zone) and all-day dates are shown as written. A time inside a daylight saving gap uses the offset from before the gap, and a repeated time means the first one, as RFC 5545 section 3.3.5 says.
 - **Lenient `UNTIL`**: RFC 5545 wants `UNTIL` in UTC when the start has a zone, but many calendars write `UNTIL=20261231`. Such a date is read as the end of that day in the event's zone instead of dropping the rule.
 - **Duplicates, same UID**: events with the same `UID` and `RECURRENCE-ID` (the same event imported twice, or a shared calendar that also appears in your own) are kept once: the highest `SEQUENCE` wins, then the most recent `LAST-MODIFIED` or `DTSTAMP`, then the first file named.
@@ -40,7 +40,7 @@ People who have the same week spread over several calendars (work, home, a share
 
 ### Not done yet
 
-These are planned (see [ROADMAP.md](ROADMAP.md)): Windows zone names such as `Pacific Standard Time` (read as local time for now, with a warning), custom `VTIMEZONE` definitions that are not IANA zones, `RANGE=THISANDFUTURE`, counting a `DTSTART` that does not match its rule as the first instance, to-dos, JSON output and filters.
+These are planned (see [ROADMAP.md](ROADMAP.md)): Windows zone names such as `Pacific Standard Time` (read as local time for now, with a warning), custom `VTIMEZONE` definitions that are not IANA zones, `RANGE=THISANDFUTURE`, to-dos, JSON output and filters.
 
 ## Stack
 
