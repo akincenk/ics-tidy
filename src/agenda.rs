@@ -261,19 +261,40 @@ fn expand(
         } else {
             let mut set = RRuleSet::new(start);
             let mut any_rule = false;
+            let mut start_missing = false;
             for r in &e.rrules {
-                match until_as_utc(r, e.start)
-                    .parse::<RRule<Unvalidated>>()
-                    .and_then(|r| r.validate(start))
-                {
-                    Ok(v) => {
-                        set = set.rrule(v);
+                let parsed = until_as_utc(r, e.start).parse::<RRule<Unvalidated>>();
+                match parsed.and_then(|u| Ok((u.clone(), u.validate(start)?))) {
+                    Ok((u, v)) => {
                         any_rule = true;
+                        // RFC 5545 3.8.5.3: DTSTART is the first instance and
+                        // counts toward COUNT, even when the rule would not
+                        // produce it (the RFC calls that set undefined; this
+                        // follows the text of 3.8.5.3 and 3.3.10).
+                        let first = RRuleSet::new(start).rrule(v.clone()).all(1).dates;
+                        if first.first() == Some(&start) {
+                            set = set.rrule(v);
+                            continue;
+                        }
+                        start_missing = true;
+                        warnings.push(format!(
+                            "{}: DTSTART does not match RRULE {r:?}; shown as the first instance",
+                            label()
+                        ));
+                        match u.get_count() {
+                            Some(n) if n <= 1 => {}
+                            Some(n) => match u.count(n - 1).validate(start) {
+                                Ok(v) => set = set.rrule(v),
+                                Err(err) => warnings
+                                    .push(format!("{}: RRULE {r:?} ignored: {err}", label())),
+                            },
+                            None => set = set.rrule(v),
+                        }
                     }
                     Err(err) => warnings.push(format!("{}: RRULE {r:?} ignored: {err}", label())),
                 }
             }
-            if !any_rule {
+            if !any_rule || start_missing {
                 set = set.rdate(start);
             }
             for d in &e.rdates {
@@ -510,6 +531,53 @@ mod tests {
             summaries,
             ["Payday", "Gym", "Lunch", "Payday", "Gym", "Lunch", "Gym"]
         );
+    }
+
+    fn run(ics: &str, from: &str, to: &str) -> (Vec<String>, Vec<String>) {
+        let (list, report) = agenda(events(ics, "a"), range(from, to), Tz::UTC, false);
+        (starts(&list), report.warnings)
+    }
+
+    #[test]
+    fn unsynced_dtstart_is_first_instance_and_counts() {
+        // 2026-11-24 is a Tuesday; the rule only gives Mondays.
+        let ev = |rule: &str, extra: &str| {
+            format!(
+                "BEGIN:VEVENT\nUID:t\nSUMMARY:X\nDTSTART:20261124T100000Z\nRRULE:{rule}\n{extra}END:VEVENT"
+            )
+        };
+        let (from, to) = ("2026-11-01 00:00", "2027-01-01 00:00");
+
+        let (s, w) = run(&ev("FREQ=WEEKLY;BYDAY=MO;COUNT=2", ""), from, to);
+        assert_eq!(s, ["2026-11-24 10:00", "2026-11-30 10:00"]);
+        assert_eq!(w.len(), 1);
+        assert!(w[0].contains("DTSTART does not match"), "{w:?}");
+
+        let (s, _) = run(&ev("FREQ=WEEKLY;BYDAY=MO;COUNT=1", ""), from, to);
+        assert_eq!(s, ["2026-11-24 10:00"]);
+
+        let (s, _) = run(
+            &ev("FREQ=WEEKLY;BYDAY=MO;UNTIL=20261208T000000Z", ""),
+            from,
+            to,
+        );
+        assert_eq!(
+            s,
+            ["2026-11-24 10:00", "2026-11-30 10:00", "2026-12-07 10:00"]
+        );
+
+        // EXDATE still removes it.
+        let (s, _) = run(
+            &ev("FREQ=WEEKLY;BYDAY=MO;COUNT=2", "EXDATE:20261124T100000Z\n"),
+            from,
+            to,
+        );
+        assert_eq!(s, ["2026-11-30 10:00"]);
+
+        // A rule that matches DTSTART gives no warning and no extra instance.
+        let (s, w) = run(&ev("FREQ=WEEKLY;BYDAY=TU;COUNT=2", ""), from, to);
+        assert_eq!(s, ["2026-11-24 10:00", "2026-12-01 10:00"]);
+        assert!(w.is_empty(), "{w:?}");
     }
 
     #[test]
