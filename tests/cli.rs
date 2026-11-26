@@ -149,3 +149,80 @@ fn usage_errors_exit_2() {
     );
     assert_eq!(run(&["agenda"]).0, 2);
 }
+
+#[test]
+fn input_without_vcalendar_is_an_error() {
+    let dir = std::env::temp_dir().join(format!("ics-tidy-novcal-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let html = dir.join("team.ics");
+    std::fs::write(
+        &html,
+        "<!DOCTYPE html>\n<html><body>Please sign in</body></html>\n",
+    )
+    .unwrap();
+    let empty = dir.join("empty.ics");
+    std::fs::write(&empty, "\r\n").unwrap();
+    let no_events = dir.join("no-events.ics");
+    std::fs::write(
+        &no_events,
+        "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nEND:VCALENDAR\r\n",
+    )
+    .unwrap();
+    let (html, empty, no_events) = (
+        html.to_str().unwrap(),
+        empty.to_str().unwrap(),
+        no_events.to_str().unwrap(),
+    );
+
+    let (code, out, err) = run(&["agenda", FILES[0], html]);
+    assert_eq!(code, 2, "{err}");
+    assert!(out.is_empty(), "{out}");
+    assert!(
+        err.contains(
+            "team.ics: no VCALENDAR found, not an iCalendar file? (first line: \"<!DOCTYPE html>\")"
+        ),
+        "{err}"
+    );
+    assert!(!err.contains("warning:"), "{err}");
+
+    let (code, _, err) = run(&["merge", empty]);
+    assert_eq!(code, 2, "{err}");
+    assert!(
+        err.contains("empty.ics: empty input, no VCALENDAR"),
+        "{err}"
+    );
+
+    // A calendar with no events is fine.
+    let (code, _, err) = run(&["agenda", "--strict", no_events]);
+    assert_eq!(code, 0, "{err}");
+    std::fs::remove_dir_all(dir).ok();
+}
+
+#[test]
+fn strict_exits_1_on_warnings() {
+    let args = [
+        "agenda",
+        "--from",
+        "2026-11-23",
+        "--tz",
+        "America/Vancouver",
+    ];
+    let (code, out, _) = run(&[&args[..], &[FILES[1]]].concat());
+    assert_eq!(code, 0, "warnings alone do not fail");
+    let (code, strict_out, err) = run(&[&args[..], &["--strict", FILES[1]]].concat());
+    assert_eq!(code, 1, "{err}");
+    assert_eq!(strict_out, out, "output is still written");
+    let (code, _, err) = run(&[&args[..], &["--strict", FILES[0]]].concat());
+    assert_eq!(code, 0, "{err}");
+    // Global flag: also accepted before the subcommand, and for merge.
+    let bad = std::env::temp_dir().join(format!("ics-tidy-strict-{}.ics", std::process::id()));
+    std::fs::write(
+        &bad,
+        "BEGIN:VCALENDAR\r\nnot a content line\r\nEND:VCALENDAR\r\n",
+    )
+    .unwrap();
+    let (code, _, err) = run(&["--strict", "merge", bad.to_str().unwrap()]);
+    assert_eq!(code, 1, "{err}");
+    assert!(err.contains("1 warnings"), "{err}");
+    std::fs::remove_file(bad).ok();
+}

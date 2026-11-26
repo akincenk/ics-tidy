@@ -16,6 +16,9 @@ use ics_tidy::{agenda, event, events_in, merge, parse, render, write};
 struct Cli {
     #[command(subcommand)]
     command: Command,
+    /// Exit with status 1 when there were any warnings (output is still written).
+    #[arg(long, global = true)]
+    strict: bool,
 }
 
 #[derive(Subcommand)]
@@ -65,8 +68,11 @@ enum Format {
 }
 
 fn main() -> ExitCode {
-    match run(Cli::parse()) {
-        Ok(()) => ExitCode::SUCCESS,
+    let cli = Cli::parse();
+    let strict = cli.strict;
+    match run(cli) {
+        Ok(warnings) if strict && warnings > 0 => ExitCode::from(1),
+        Ok(_) => ExitCode::SUCCESS,
         Err(e) => {
             eprintln!("ics-tidy: {e}");
             ExitCode::from(2)
@@ -108,6 +114,37 @@ fn read_input(
     Ok((source, calendar, text))
 }
 
+/// Read and parse one input. Returns its source name, calendar name and
+/// top-level components. Input without any VCALENDAR (an empty file, or an
+/// HTML error page saved as .ics) is an error, not an empty calendar.
+fn parse_input(
+    path: &str,
+    warnings: &mut Vec<parse::Warning>,
+) -> Result<(String, String, Vec<parse::Component>), String> {
+    let (source, calendar, text) = read_input(path, warnings)?;
+    let (cals, ws) = parse::parse(&text, &source);
+    if !cals.iter().any(|c| c.name == "VCALENDAR") {
+        return Err(
+            match text
+                .trim_start_matches('\u{feff}')
+                .lines()
+                .map(str::trim)
+                .find(|l| !l.is_empty())
+            {
+                None => format!("{source}: empty input, no VCALENDAR"),
+                Some(first) => {
+                    let first: String = first.chars().take(60).collect();
+                    format!(
+                        "{source}: no VCALENDAR found, not an iCalendar file? (first line: {first:?})"
+                    )
+                }
+            },
+        );
+    }
+    warnings.extend(ws);
+    Ok((source, calendar, cals))
+}
+
 fn display_zone(name: Option<&str>) -> Result<Tz, String> {
     match name {
         Some(n) => event::lookup_zone(n).ok_or_else(|| {
@@ -120,7 +157,8 @@ fn display_zone(name: Option<&str>) -> Result<Tz, String> {
     }
 }
 
-fn run(cli: Cli) -> Result<(), String> {
+/// Returns the number of warnings.
+fn run(cli: Cli) -> Result<usize, String> {
     let mut warnings = Vec::new();
     match cli.command {
         Command::Agenda {
@@ -146,9 +184,7 @@ fn run(cli: Cli) -> Result<(), String> {
 
             let mut events = Vec::new();
             for f in &files {
-                let (source, calendar, text) = read_input(f, &mut warnings)?;
-                let (cals, ws) = parse::parse(&text, &source);
-                warnings.extend(ws);
+                let (source, calendar, cals) = parse_input(f, &mut warnings)?;
                 events.extend(events_in(&cals, &source, &calendar, &mut warnings));
             }
             let (list, report) = agenda::agenda(events, range, display, keep_duplicates);
@@ -175,6 +211,7 @@ fn run(cli: Cli) -> Result<(), String> {
                 report.cancelled,
                 warnings.len() + report.warnings.len()
             );
+            Ok(warnings.len() + report.warnings.len())
         }
         Command::Merge {
             files,
@@ -183,9 +220,7 @@ fn run(cli: Cli) -> Result<(), String> {
         } => {
             let mut calendars = Vec::new();
             for f in &files {
-                let (source, _, text) = read_input(f, &mut warnings)?;
-                let (cals, ws) = parse::parse(&text, &source);
-                warnings.extend(ws);
+                let (source, _, cals) = parse_input(f, &mut warnings)?;
                 calendars.extend(cals.into_iter().map(|c| (source.clone(), c)));
             }
             let (cal, report) = merge::merge(&calendars, by_content, &mut warnings);
@@ -208,9 +243,9 @@ fn run(cli: Cli) -> Result<(), String> {
                 report.timezones,
                 warnings.len()
             );
+            Ok(warnings.len())
         }
     }
-    Ok(())
 }
 
 fn print_out(s: &str) -> Result<(), String> {
