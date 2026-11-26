@@ -36,7 +36,7 @@ People who have the same week spread over several calendars (work, home, a share
 - **Lenient `UNTIL`**: RFC 5545 wants `UNTIL` in UTC when the start has a zone, but many calendars write `UNTIL=20261231`. Such a date is read as the end of that day in the event's zone instead of dropping the rule.
 - **Duplicates, same UID**: events with the same `UID` and `RECURRENCE-ID` (the same event imported twice, or a shared calendar that also appears in your own) are kept once: the highest `SEQUENCE` wins, then the most recent `LAST-MODIFIED` or `DTSTAMP`, then the first file named.
 - **Duplicates, same content**: in the agenda, entries with the same title (ignoring case and extra spaces), start and end are shown once with all their calendars listed, as `[work, home]` above. `--keep-duplicates` turns this off. `merge --by-content` drops such events from the merged file too.
-- **Forgiving reader**: bad lines, unclosed components, unknown zones and rules that cannot be read become warnings with file and line number where possible; the rest of the file is still used.
+- **Forgiving reader**: bad lines, unclosed components, unknown zones and rules that cannot be read become warnings with file and line number where possible; the rest of the file is still used. A file with no `VCALENDAR` is an error (see Exit status).
 
 ### Not done yet
 
@@ -88,7 +88,11 @@ Writes one `VCALENDAR` with `VERSION`, `PRODID` and `CALSCALE`, one copy of each
 
 ### Exit status
 
-0 on success, also when there were warnings. 2 for usage errors and files that cannot be read.
+0 on success, also when there were warnings. 1 with `--strict` when there was at least one warning (the output is still written, so a script can keep it or throw it away). 2 for usage errors, files that cannot be read, and input with no `VCALENDAR` at all, such as an empty file or an HTML login page saved as `.ics`; nothing is written in that case. A calendar that has a `VCALENDAR` but no events is fine.
+
+```sh
+ics-tidy agenda --strict --days 1 work.ics home.ics > today.txt || echo "check the warnings"
+```
 
 ### As a library
 
